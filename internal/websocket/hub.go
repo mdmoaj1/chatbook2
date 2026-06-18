@@ -110,8 +110,80 @@ type Client struct {
 	ID     string
 	UserID string
 	Hub    *Hub
+	Conn   *ws.Conn
 	Send   chan []byte
 	mu     sync.Mutex
+}
+
+const (
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = (pongWait * 9) / 10
+	maxMessageSize = 512 * 1024
+)
+
+func (c *Client) readPump() {
+	defer func() {
+		c.Hub.unregister <- c
+		c.Conn.Close()
+	}()
+	c.Conn.SetReadLimit(maxMessageSize)
+	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.Conn.SetPongHandler(func(string) error { c.Conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	for {
+		_, message, err := c.Conn.ReadMessage()
+		if err != nil {
+			if ws.IsUnexpectedCloseError(err, ws.CloseGoingAway, ws.CloseAbnormalClosure) {
+				log.Error().Err(err).Msg("error reading websocket message")
+			}
+			break
+		}
+		var env Envelope
+		if err := json.Unmarshal(message, &env); err != nil {
+			log.Warn().Err(err).Msg("failed to unmarshal message")
+			continue
+		}
+		// Route message via Hub
+		if env.To != "" {
+			c.Hub.SendToUser(env.To, env)
+		} else {
+			c.Hub.broadcast <- env
+		}
+	}
+}
+
+func (c *Client) writePump() {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.Conn.Close()
+	}()
+	for {
+		select {
+		case message, ok := <-c.Send:
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				// The hub closed the channel.
+				c.Conn.WriteMessage(ws.CloseMessage, []byte{})
+				return
+			}
+
+			w, err := c.Conn.NextWriter(ws.TextMessage)
+			if err != nil {
+				return
+			}
+			w.Write(message)
+
+			if err := w.Close(); err != nil {
+				return
+			}
+		case <-ticker.C:
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.Conn.WriteMessage(ws.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}
 }
 
 func (c *Client) SendEnvelope(env Envelope) error {
