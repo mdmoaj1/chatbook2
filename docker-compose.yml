@@ -108,7 +108,7 @@ services:
       - "3478:3478/udp"
       - "5349:5349/tcp"  # TURNS (TLS)
       - "5349:5349/udp"
-      - "49152-49200:49152-49200/udp"  # TURN relay ports
+      - "50000-50050:50000-50050/udp"  # TURN relay ports
     volumes:
       - ./infrastructure/docker/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
     command: -c /etc/coturn/turnserver.conf
@@ -121,7 +121,7 @@ services:
     container_name: chatbook_nginx
     restart: unless-stopped
     ports:
-      - "6161:80"
+      - "9081:80"
       - "443:443"
     volumes:
       - ./infrastructure/docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
