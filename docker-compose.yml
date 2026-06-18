@@ -1,0 +1,176 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Chatbook — Full Local Development Stack
+#
+# Services:
+#   backend   — Go API + WebSocket server (signaling only)
+#   postgres  — Primary database (text messages + metadata only)
+#   redis     — Presence, rate limiting, pub/sub
+#   coturn    — STUN/TURN server for WebRTC NAT traversal
+#   prometheus — Metrics collection
+#   grafana   — Dashboards (import chatbook.json dashboard)
+#   nginx     — Reverse proxy
+#
+# NOTE: No media ever passes through any of these services.
+#       All audio/video/files travel directly between Android devices.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Go Backend ──────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chatbook-backend:latest
+    container_name: chatbook_backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ENVIRONMENT: development
+      PORT: "8080"
+      DATABASE_URL: "postgres://chatbook:chatbook_secret@postgres:5432/chatbook?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+      JWT_SECRET: "dev-jwt-secret-change-in-production-min-32-chars"
+      GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+      FCM_CREDENTIALS_PATH: "/secrets/firebase-adminsdk.json"
+      ALLOWED_ORIGINS: "http://localhost:3000,http://10.0.2.2:8080"
+      TURN_USERNAME: "chatbook"
+      TURN_CREDENTIAL: "dev-turn-secret"
+    volumes:
+      - ./secrets:/secrets:ro  # Firebase service account JSON
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chatbook_net
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: chatbook_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: chatbook
+      POSTGRES_USER: chatbook
+      POSTGRES_PASSWORD: chatbook_secret
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatbook -d chatbook"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - chatbook_net
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: chatbook_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - chatbook_net
+
+  # ── Coturn (STUN/TURN for WebRTC NAT traversal) ──────────────────────────────
+  # This helps peers find each other behind NAT.
+  # Audio/video/file DATA still flows peer-to-peer.
+  # TURN relays ONLY when direct P2P is impossible (symmetric NAT).
+  # Even with TURN, goal is <5% traffic uses TURN (most traffic is direct P2P).
+  coturn:
+    image: coturn/coturn:4.6.2
+    container_name: chatbook_coturn
+    restart: unless-stopped
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "5349:5349/tcp"  # TURNS (TLS)
+      - "5349:5349/udp"
+      - "49152-49200:49152-49200/udp"  # TURN relay ports
+    volumes:
+      - ../infrastructure/docker/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: -c /etc/coturn/turnserver.conf
+    networks:
+      - chatbook_net
+
+  # ── Nginx (Reverse Proxy) ─────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: chatbook_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../infrastructure/docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+    networks:
+      - chatbook_net
+
+  # ── Prometheus ────────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: chatbook_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - chatbook_net
+
+  # ── Grafana ───────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: chatbook_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../infrastructure/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    depends_on:
+      - prometheus
+    networks:
+      - chatbook_net
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  chatbook_net:
+    driver: bridge
