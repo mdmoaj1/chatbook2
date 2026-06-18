@@ -7,6 +7,7 @@ import (
 
 	"github.com/chatbook/backend/internal/presence"
 	"github.com/google/uuid"
+	ws "github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 )
 
