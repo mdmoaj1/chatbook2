@@ -40,11 +40,15 @@ func (s *Service) VerifyGoogleToken(ctx context.Context, idToken string) (*Googl
 	if err != nil {
 		return nil, fmt.Errorf("invalid google token: %w", err)
 	}
+	email, _ := payload.Claims["email"].(string)
+	name, _ := payload.Claims["name"].(string)
+	picture, _ := payload.Claims["picture"].(string)
+
 	return &GoogleUserInfo{
 		GoogleID:    payload.Subject,
-		Email:       payload.Claims["email"].(string),
-		DisplayName: fmt.Sprintf("%v", payload.Claims["name"]),
-		AvatarURL:   fmt.Sprintf("%v", payload.Claims["picture"]),
+		Email:       email,
+		DisplayName: name,
+		AvatarURL:   picture,
 	}, nil
 }
 
