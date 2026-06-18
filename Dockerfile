@@ -23,7 +23,7 @@ COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /app/chatbook-server /chatbook-server
 COPY --from=builder /app/migrations /migrations
 
-EXPOSE 8080
+EXPOSE 6060
 
 USER 65534:65534
 
