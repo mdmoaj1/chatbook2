@@ -136,7 +136,7 @@ func (s *Service) StoreRefreshToken(ctx context.Context, userID, token string) e
 func (s *Service) RefreshTokens(ctx context.Context, refreshToken string) (userID, newAccess, newRefresh string, err error) {
 	hash := hashToken(refreshToken)
 	storedToken, err := s.repo.FindRefreshToken(ctx, hash)
-	if err != nil || storedToken.Revoked {
+	if err != nil || storedToken == nil || storedToken.Revoked {
 		return "", "", "", fmt.Errorf("invalid refresh token")
 	}
 	if time.Now().After(storedToken.ExpiresAt) {

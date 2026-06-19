@@ -11,6 +11,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// timeNow is a replaceable clock for testing
+var timeNow = time.Now
+
 // ─── Message Envelope ────────────────────────────────────────────────────────
 // ALL WebSocket messages use this typed envelope.
 // Backend NEVER sends audio, video, or file bytes through here.
@@ -129,8 +132,8 @@ func (c *Client) readPump() {
 		c.Conn.Close()
 	}()
 	c.Conn.SetReadLimit(maxMessageSize)
-	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.Conn.SetPongHandler(func(string) error { c.Conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	c.Conn.SetReadDeadline(timeNow().Add(pongWait))
+	c.Conn.SetPongHandler(func(string) error { c.Conn.SetReadDeadline(timeNow().Add(pongWait)); return nil })
 	for {
 		_, message, err := c.Conn.ReadMessage()
 		if err != nil {

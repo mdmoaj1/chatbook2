@@ -16,6 +16,7 @@ import (
 	"github.com/chatbook/backend/internal/notification"
 	"github.com/chatbook/backend/internal/presence"
 	"github.com/chatbook/backend/internal/signaling"
+	"github.com/chatbook/backend/internal/thread"
 	"github.com/chatbook/backend/internal/user"
 	"github.com/chatbook/backend/internal/websocket"
 	"github.com/chatbook/backend/pkg/postgres"
@@ -63,19 +64,22 @@ func main() {
 	userRepo    := user.NewRepository(db)
 	contactRepo := contact.NewRepository(db)
 	msgRepo     := messaging.NewRepository(db)
+	threadRepo  := thread.NewRepository(db)
 
 	// ── Service layer ────────────────────────────────────────────────────────
 	authService    := auth.NewService(authRepo, cfg.JWTSecret, cfg.GoogleClientID)
 	userService    := user.NewService(userRepo)
-	contactService := contact.NewService(contactRepo)
+	contactService := contact.NewService(contactRepo, presenceService)
 	msgService     := messaging.NewService(msgRepo, wsHub, notificationService, presenceService)
 	sigService     := signaling.NewService(wsHub, notificationService)
+	threadService  := thread.NewService(threadRepo)
 
 	// ── Handlers ─────────────────────────────────────────────────────────────
 	authHandler    := auth.NewHandler(authService)
 	userHandler    := user.NewHandler(userService)
 	contactHandler := contact.NewHandler(contactService)
 	wsHandler      := websocket.NewHandler(wsHub, msgService, sigService, presenceService)
+	threadHandler  := thread.NewHandler(threadService)
 
 	// ── Gin Router ───────────────────────────────────────────────────────────
 	if cfg.Environment == "production" {
@@ -114,29 +118,37 @@ func main() {
 	// Authenticated routes
 	authed := v1.Group("/")
 	authed.Use(middleware.Auth(cfg.JWTSecret))
-	authed.Use(middleware.RateLimit(rdb, 100, time.Minute))
+	authed.Use(middleware.RateLimit(rdb, 200, time.Minute))
 	{
-		// Users
-		authed.GET("/users/me",              userHandler.GetMe)
-		authed.PUT("/users/me",              userHandler.UpdateProfile)
-		authed.POST("/users/me/fcm-token",   userHandler.UpdateFCMToken)
-		authed.GET("/users/search",          userHandler.Search)
+		// ── Users ──────────────────────────────────────────────────────────
+		authed.GET("/users/me",            userHandler.GetMe)
+		authed.PUT("/users/me",            userHandler.UpdateProfile)
+		authed.POST("/users/me/fcm-token", userHandler.UpdateFCMToken)
+		authed.GET("/users/search",        userHandler.Search)
 
-		// Contacts
+		// ── Contacts ──────────────────────────────────────────────────────
 		authed.GET("/contacts",              contactHandler.List)
 		authed.POST("/contacts",             contactHandler.Add)
 		authed.DELETE("/contacts/:id",       contactHandler.Remove)
 		authed.POST("/contacts/:id/block",   contactHandler.Block)
 		authed.POST("/contacts/:id/unblock", contactHandler.Unblock)
+
+		// ── Threads / Feed ─────────────────────────────────────────────────
+		authed.POST("/threads",                    threadHandler.CreateThread)
+		authed.GET("/threads",                     threadHandler.ListFeed)
+		authed.GET("/threads/:id",                 threadHandler.GetThread)
+		authed.POST("/threads/:id/react",          threadHandler.React)
+		authed.POST("/threads/:id/comments",       threadHandler.AddComment)
+		authed.GET("/threads/:id/comments",        threadHandler.GetComments)
 	}
 
 	// ── WebSocket ─────────────────────────────────────────────────────────────
-	// Single unified WebSocket for:
-	//   - Text messaging
+	// Single unified WebSocket:
+	//   - Text messaging (E2E encrypted — backend stores ciphertext only)
 	//   - WebRTC signaling (SDP / ICE)
 	//   - Presence updates
 	//   - Typing indicators
-	//   - File transfer notifications (NEVER file data)
+	//   - File transfer notifications (NEVER file data — always P2P)
 	r.GET("/ws", middleware.WSAuth(cfg.JWTSecret), wsHandler.HandleConnection)
 
 	// ── Start Hub ────────────────────────────────────────────────────────────
