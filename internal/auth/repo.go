@@ -13,6 +13,7 @@ type User struct {
 	DisplayName string
 	AvatarURL   string
 	PublicKey   string
+	PhoneNumber string
 	CreatedAt   time.Time
 }
 
@@ -28,11 +29,11 @@ func (r *Repository) FindByGoogleID(ctx context.Context, googleID string) (*User
 	u := &User{}
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, google_id, email, display_name,
-		       COALESCE(avatar_url, ''), COALESCE(public_key, ''), created_at
+		       COALESCE(avatar_url, ''), COALESCE(public_key, ''), COALESCE(phone_number, ''), created_at
 		FROM users WHERE google_id = $1
 	`, googleID).Scan(
 		&u.ID, &u.GoogleID, &u.Email, &u.DisplayName,
-		&u.AvatarURL, &u.PublicKey, &u.CreatedAt,
+		&u.AvatarURL, &u.PublicKey, &u.PhoneNumber, &u.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -45,11 +46,11 @@ func (r *Repository) FindByGoogleID(ctx context.Context, googleID string) (*User
 
 func (r *Repository) Create(ctx context.Context, user *User) error {
 	return r.db.QueryRowContext(ctx, `
-		INSERT INTO users (id, google_id, email, display_name, avatar_url, public_key, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+		INSERT INTO users (id, google_id, email, display_name, avatar_url, public_key, phone_number, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
 		RETURNING id
 	`, user.ID, user.GoogleID, user.Email, user.DisplayName,
-		user.AvatarURL, user.PublicKey, user.CreatedAt,
+		user.AvatarURL, user.PublicKey, user.PhoneNumber, user.CreatedAt,
 	).Scan(&user.ID)
 }
 

@@ -41,6 +41,9 @@ func (s *Service) VerifyGoogleToken(ctx context.Context, idToken string) (*Googl
 		return nil, fmt.Errorf("invalid google token: %w", err)
 	}
 	email, _ := payload.Claims["email"].(string)
+	if email == "" {
+		email = payload.Subject + "@placeholder.chatbook"
+	}
 	name, _ := payload.Claims["name"].(string)
 	picture, _ := payload.Claims["picture"].(string)
 

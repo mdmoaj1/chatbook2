@@ -19,6 +19,7 @@ type User struct {
 	AvatarURL     string    `json:"avatar_url"`
 	PublicKey     string    `json:"public_key"`
 	StatusMessage string    `json:"status_message"`
+	PhoneNumber   string    `json:"phone_number"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
@@ -37,25 +38,26 @@ func (r *Repository) GetByID(ctx context.Context, userID string) (*User, error) 
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, display_name, email,
 		       COALESCE(avatar_url, ''), COALESCE(public_key, ''),
-		       COALESCE(status_message, ''), created_at
+		       COALESCE(status_message, ''), COALESCE(phone_number, ''), created_at
 		FROM users WHERE id = $1
 	`, userID).Scan(&u.ID, &u.DisplayName, &u.Email, &u.AvatarURL,
-		&u.PublicKey, &u.StatusMessage, &u.CreatedAt)
+		&u.PublicKey, &u.StatusMessage, &u.PhoneNumber, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	return u, err
 }
 
-func (r *Repository) UpdateProfile(ctx context.Context, userID, displayName, statusMessage, publicKey string) error {
+func (r *Repository) UpdateProfile(ctx context.Context, userID, displayName, statusMessage, publicKey, phoneNumber string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE users
 		SET display_name   = COALESCE(NULLIF($2, ''), display_name),
 		    status_message = $3,
 		    public_key     = COALESCE(NULLIF($4, ''), public_key),
+		    phone_number   = COALESCE(NULLIF($5, ''), phone_number),
 		    updated_at     = NOW()
 		WHERE id = $1
-	`, userID, displayName, statusMessage, publicKey)
+	`, userID, displayName, statusMessage, publicKey, phoneNumber)
 	return err
 }
 
@@ -77,7 +79,7 @@ func (r *Repository) SearchAll(ctx context.Context, query, excludeUserID string)
 		rows, err = r.db.QueryContext(ctx, `
 			SELECT id, display_name, email,
 			       COALESCE(avatar_url, ''), COALESCE(public_key, ''),
-			       COALESCE(status_message, ''), created_at
+			       COALESCE(status_message, ''), COALESCE(phone_number, ''), created_at
 			FROM users
 			WHERE id != $1
 			ORDER BY display_name ASC
@@ -87,11 +89,12 @@ func (r *Repository) SearchAll(ctx context.Context, query, excludeUserID string)
 		rows, err = r.db.QueryContext(ctx, `
 			SELECT id, display_name, email,
 			       COALESCE(avatar_url, ''), COALESCE(public_key, ''),
-			       COALESCE(status_message, ''), created_at
+			       COALESCE(status_message, ''), COALESCE(phone_number, ''), created_at
 			FROM users
 			WHERE id != $1
 			  AND (LOWER(display_name) LIKE '%' || LOWER($2) || '%'
-			    OR LOWER(email)        LIKE '%' || LOWER($2) || '%')
+			    OR LOWER(email)        LIKE '%' || LOWER($2) || '%'
+			    OR phone_number        LIKE '%' || $2 || '%')
 			ORDER BY display_name ASC
 			LIMIT 50
 		`, excludeUserID, query)
@@ -105,7 +108,7 @@ func (r *Repository) SearchAll(ctx context.Context, query, excludeUserID string)
 	for rows.Next() {
 		var u User
 		if err := rows.Scan(&u.ID, &u.DisplayName, &u.Email, &u.AvatarURL,
-			&u.PublicKey, &u.StatusMessage, &u.CreatedAt); err != nil {
+			&u.PublicKey, &u.StatusMessage, &u.PhoneNumber, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
@@ -127,8 +130,8 @@ func (s *Service) GetMe(ctx context.Context, userID string) (*User, error) {
 	return s.repo.GetByID(ctx, userID)
 }
 
-func (s *Service) UpdateProfile(ctx context.Context, userID, displayName, statusMessage, publicKey string) (*User, error) {
-	if err := s.repo.UpdateProfile(ctx, userID, displayName, statusMessage, publicKey); err != nil {
+func (s *Service) UpdateProfile(ctx context.Context, userID, displayName, statusMessage, publicKey, phoneNumber string) (*User, error) {
+	if err := s.repo.UpdateProfile(ctx, userID, displayName, statusMessage, publicKey, phoneNumber); err != nil {
 		return nil, err
 	}
 	return s.repo.GetByID(ctx, userID)
@@ -173,6 +176,7 @@ type UpdateProfileRequest struct {
 	DisplayName   string `json:"display_name"`
 	StatusMessage string `json:"status_message"`
 	PublicKey     string `json:"public_key"`
+	PhoneNumber   string `json:"phone_number"`
 }
 
 func (h *Handler) UpdateProfile(c *gin.Context) {
@@ -182,7 +186,7 @@ func (h *Handler) UpdateProfile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
 	}
-	user, err := h.service.UpdateProfile(c.Request.Context(), userID, req.DisplayName, req.StatusMessage, req.PublicKey)
+	user, err := h.service.UpdateProfile(c.Request.Context(), userID, req.DisplayName, req.StatusMessage, req.PublicKey, req.PhoneNumber)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to update profile")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
