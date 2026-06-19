@@ -60,9 +60,12 @@ func (s *Service) VerifyGoogleToken(ctx context.Context, idToken string) (*Googl
 func (s *Service) UpsertUser(ctx context.Context, info *GoogleUserInfo) (*User, error) {
 	existing, err := s.repo.FindByGoogleID(ctx, info.GoogleID)
 	if err == nil && existing != nil {
-		// Update display name and avatar on each login
+		// Update display name, email, and avatar on each login
 		existing.DisplayName = info.DisplayName
 		existing.AvatarURL   = info.AvatarURL
+		if existing.Email == "" || existing.Email == "@placeholder.chatbook" {
+			existing.Email = info.Email
+		}
 		if err := s.repo.Update(ctx, existing); err != nil {
 			return nil, err
 		}

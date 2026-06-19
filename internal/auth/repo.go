@@ -56,9 +56,9 @@ func (r *Repository) Create(ctx context.Context, user *User) error {
 
 func (r *Repository) Update(ctx context.Context, user *User) error {
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE users SET display_name = $1, avatar_url = $2, updated_at = NOW()
-		WHERE id = $3
-	`, user.DisplayName, user.AvatarURL, user.ID)
+		UPDATE users SET display_name = $1, avatar_url = $2, email = $3, updated_at = NOW()
+		WHERE id = $4
+	`, user.DisplayName, user.AvatarURL, user.Email, user.ID)
 	return err
 }
 
