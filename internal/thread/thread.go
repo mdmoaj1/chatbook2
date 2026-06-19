@@ -66,7 +66,19 @@ func (r *Repository) CreateThread(ctx context.Context, authorID, content string)
 	if err != nil {
 		return nil, err
 	}
-	return &Thread{ID: id, AuthorID: authorID, Content: content, CreatedAt: now, Reactions: []ReactionSummary{}}, nil
+	var authorName, authorAvatar string
+	r.db.QueryRowContext(ctx, `SELECT display_name, COALESCE(avatar_url, '') FROM users WHERE id = $1`, authorID).
+		Scan(&authorName, &authorAvatar)
+
+	return &Thread{
+		ID:           id,
+		AuthorID:     authorID,
+		AuthorName:   authorName,
+		AuthorAvatar: authorAvatar,
+		Content:      content,
+		CreatedAt:    now,
+		Reactions:    []ReactionSummary{},
+	}, nil
 }
 
 func (r *Repository) ListFeed(ctx context.Context, requestingUserID string, limit int, before time.Time) ([]Thread, error) {

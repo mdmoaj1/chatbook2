@@ -133,6 +133,11 @@ func main() {
 		authed.POST("/contacts/:id/block",   contactHandler.Block)
 		authed.POST("/contacts/:id/unblock", contactHandler.Unblock)
 
+		authed.POST("/contacts/requests",             contactHandler.SendRequest)
+		authed.GET("/contacts/requests",              contactHandler.ListRequests)
+		authed.POST("/contacts/requests/:id/accept",  contactHandler.AcceptRequest)
+		authed.POST("/contacts/requests/:id/reject",  contactHandler.RejectRequest)
+
 		// ── Threads / Feed ─────────────────────────────────────────────────
 		authed.POST("/threads",                    threadHandler.CreateThread)
 		authed.GET("/threads",                     threadHandler.ListFeed)
