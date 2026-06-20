@@ -11,6 +11,7 @@ import (
 	"github.com/chatbook/backend/internal/auth"
 	"github.com/chatbook/backend/internal/config"
 	"github.com/chatbook/backend/internal/contact"
+	"github.com/chatbook/backend/internal/group"
 	"github.com/chatbook/backend/internal/messaging"
 	"github.com/chatbook/backend/internal/middleware"
 	"github.com/chatbook/backend/internal/notification"
@@ -63,6 +64,7 @@ func main() {
 	authRepo    := auth.NewRepository(db)
 	userRepo    := user.NewRepository(db)
 	contactRepo := contact.NewRepository(db)
+	groupRepo   := group.NewRepository(db)
 	msgRepo     := messaging.NewRepository(db)
 	threadRepo  := thread.NewRepository(db)
 
@@ -70,6 +72,7 @@ func main() {
 	authService    := auth.NewService(authRepo, cfg.JWTSecret, cfg.GoogleClientID)
 	userService    := user.NewService(userRepo)
 	contactService := contact.NewService(contactRepo, presenceService)
+	groupService   := group.NewService(groupRepo)
 	msgService     := messaging.NewService(msgRepo, wsHub, notificationService, presenceService)
 	sigService     := signaling.NewService(wsHub, notificationService)
 	threadService  := thread.NewService(threadRepo)
@@ -78,6 +81,7 @@ func main() {
 	authHandler    := auth.NewHandler(authService)
 	userHandler    := user.NewHandler(userService)
 	contactHandler := contact.NewHandler(contactService)
+	groupHandler   := group.NewHandler(groupService)
 	wsHandler      := websocket.NewHandler(wsHub, msgService, sigService, presenceService)
 	threadHandler  := thread.NewHandler(threadService)
 
@@ -137,6 +141,10 @@ func main() {
 		authed.GET("/contacts/requests",              contactHandler.ListRequests)
 		authed.POST("/contacts/requests/:id/accept",  contactHandler.AcceptRequest)
 		authed.POST("/contacts/requests/:id/reject",  contactHandler.RejectRequest)
+
+		// ── Groups ─────────────────────────────────────────────────────────
+		authed.GET("/groups",              groupHandler.List)
+		authed.POST("/groups",             groupHandler.Create)
 
 		// ── Threads / Feed ─────────────────────────────────────────────────
 		authed.POST("/threads",                    threadHandler.CreateThread)
